@@ -161,4 +161,4 @@ EOF
 curl -s -X POST "$API_ENDPOINT" \
     -H "Content-Type: application/json" \
     -H "X-Api-Key: $API_KEY" \
-    -d "$JSON_PAYLOAD" | jq '.'
+    -d "$JSON_PAYLOAD" | jq '.answer' | sed 's/^"\(.*\)"$/\1/'
