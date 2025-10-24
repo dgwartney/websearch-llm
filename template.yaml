@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Web Search LLM Lambda Function with API Gateway
+
+Parameters:
+  TargetDomain:
+    Type: String
+    Description: The domain to search (e.g., example.com)
+    Default: example.com
+
+  GoogleApiKey:
+    Type: String
+    Description: Google Custom Search API Key (optional, leave empty to use alternative)
+    Default: ""
+    NoEcho: true
+
+  GoogleSearchEngineId:
+    Type: String
+    Description: Google Custom Search Engine ID (optional)
+    Default: ""
+    NoEcho: true
+
+  BedrockModelId:
+    Type: String
+    Description: AWS Bedrock Model ID
+    Default: anthropic.claude-3-haiku-20240307-v1:0
+    AllowedValues:
+      - anthropic.claude-3-haiku-20240307-v1:0
+      - anthropic.claude-3-sonnet-20240229-v1:0
+      - anthropic.claude-3-5-sonnet-20240620-v1:0
+
+  MaxConcurrentRequests:
+    Type: Number
+    Description: Maximum concurrent scraping requests (rate limiting)
+    Default: 3
+    MinValue: 1
+    MaxValue: 10
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1536
+    Runtime: python3.12
+    Environment:
+      Variables:
+        TARGET_DOMAIN: !Ref TargetDomain
+        GOOGLE_API_KEY: !Ref GoogleApiKey
+        GOOGLE_SEARCH_ENGINE_ID: !Ref GoogleSearchEngineId
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        MAX_CONCURRENT_REQUESTS: !Ref MaxConcurrentRequests
+        POWERTOOLS_SERVICE_NAME: websearch-llm
+        LOG_LEVEL: INFO
+
+Resources:
+  WebSearchLLMFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.lambda_handler
+      Description: Lambda function for web search and LLM-based answer generation
+      Architectures:
+        - x86_64
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+      Events:
+        SearchApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WebSearchApi
+            Path: /search
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+
+  WebSearchApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          Description: Usage plan for WebSearch LLM API
+          Quota:
+            Limit: 1000
+            Period: DAY
+          Throttle:
+            BurstLimit: 10
+            RateLimit: 5
+      Cors:
+        AllowMethods: "'POST, OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Api-Key'"
+        AllowOrigin: "'*'"
+
+  WebSearchApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub '${AWS::StackName}-api-key'
+      Description: API Key for WebSearch LLM
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref WebSearchApi
+          StageName: prod
+    DependsOn:
+      - WebSearchApiStage
+
+  WebSearchApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref WebSearchApiDeployment
+      RestApiId: !Ref WebSearchApi
+      StageName: prod
+
+  WebSearchApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref WebSearchApi
+    DependsOn:
+      - WebSearchLLMFunction
+
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref WebSearchApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref WebSearchApi.UsagePlan
+
+Outputs:
+  WebSearchApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${WebSearchApi}.execute-api.${AWS::Region}.amazonaws.com/prod/search'
+
+  WebSearchApiKey:
+    Description: API Key ID (retrieve value from AWS Console or CLI)
+    Value: !Ref WebSearchApiKey
+
+  FunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt WebSearchLLMFunction.Arn
