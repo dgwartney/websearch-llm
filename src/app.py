@@ -119,7 +119,7 @@ class WebSearchLLMHandler:
         chunks = self.text_processor.chunk_documents(documents)
 
         # Step 4: Rank chunks by relevance
-        top_chunks = self.text_processor.rank_chunks(
+        top_chunks, similarity_scores = self.text_processor.rank_chunks(
             chunks=chunks,
             query=query,
             max_chunks=max_chunks
@@ -138,6 +138,17 @@ class WebSearchLLMHandler:
             for chunk in top_chunks
         ]))
 
+        # Build detailed source information with similarity scores
+        source_details = []
+        for i, (chunk, score) in enumerate(zip(top_chunks, similarity_scores), 1):
+            source_url = chunk.metadata.get('source', 'Unknown')
+            source_details.append({
+                'rank': i,
+                'similarity_score': round(score, 4),
+                'url': source_url,
+                'content_preview': chunk.page_content[:200] + '...' if len(chunk.page_content) > 200 else chunk.page_content
+            })
+
         total_time_ms = int((time.time() - start_time) * 1000)
 
         logger.info(f"Successfully processed query in {total_time_ms}ms")
@@ -145,6 +156,7 @@ class WebSearchLLMHandler:
         return {
             'answer': answer,
             'sources': source_urls,
+            'source_details': source_details,
             'metadata': {
                 'chunks_processed': len(top_chunks),
                 'urls_scraped': len(documents),

@@ -79,9 +79,11 @@ class TextProcessor:
         chunks: List[Document],
         query: str,
         max_chunks: int = 10
-    ) -> List[Document]:
+    ) -> tuple[List[Document], List[float]]:
         """
         Rank chunks by semantic similarity to query using embeddings.
+
+        OPTIMIZATION: Limits chunks to process before embedding to avoid timeouts.
 
         Args:
             chunks: List of document chunks
@@ -89,54 +91,81 @@ class TextProcessor:
             max_chunks: Maximum number of chunks to return
 
         Returns:
-            Top-ranked chunks
+            Tuple of (top-ranked chunks, their similarity scores)
         """
         if not chunks:
-            return []
+            return [], []
 
-        # If chunks are already under limit, return all
+        # If chunks are already under limit, return all with no scores
         if len(chunks) <= max_chunks:
             logger.info(f"Chunk count ({len(chunks)}) under limit, returning all")
-            return chunks
+            return chunks, [0.0] * len(chunks)
 
-        # If embeddings not available, return first N chunks
+        # If embeddings not available, return first N chunks with no scores
         if not self.embeddings:
             logger.warning("Embeddings not available, returning first N chunks")
-            return chunks[:max_chunks]
+            return chunks[:max_chunks], [0.0] * max_chunks
+
+        # OPTIMIZATION: Limit chunks to process to avoid timeout
+        # Process at most 3x the requested chunks to balance quality vs performance
+        max_chunks_to_process = min(len(chunks), max_chunks * 3)
+        chunks_to_rank = chunks[:max_chunks_to_process]
+
+        if len(chunks) > max_chunks_to_process:
+            logger.info(
+                f"Limiting ranking from {len(chunks)} to {max_chunks_to_process} chunks "
+                f"to avoid timeout (requesting top {max_chunks})"
+            )
 
         try:
-            # Embed query
+            # Embed query once
             query_embedding = self.embeddings.embed_query(query)
 
-            # Calculate similarity scores for each chunk
+            # OPTIMIZATION: Batch embed all chunks at once instead of one-by-one
+            chunk_texts = [chunk.page_content for chunk in chunks_to_rank]
+
+            try:
+                # Try batch embedding (faster)
+                chunk_embeddings = self.embeddings.embed_documents(chunk_texts)
+                logger.info(f"Batch embedded {len(chunk_texts)} chunks")
+            except Exception as batch_error:
+                logger.warning(f"Batch embedding failed, falling back to individual: {batch_error}")
+                # Fallback to individual embeddings
+                chunk_embeddings = []
+                for text in chunk_texts:
+                    try:
+                        emb = self.embeddings.embed_query(text)
+                        chunk_embeddings.append(emb)
+                    except Exception as e:
+                        logger.warning(f"Error embedding chunk: {e}")
+                        # Use zero vector for failed embeddings
+                        chunk_embeddings.append([0.0] * len(query_embedding))
+
+            # Calculate similarity scores
             chunk_scores = []
-            for chunk in chunks:
-                try:
-                    chunk_embedding = self.embeddings.embed_query(chunk.page_content)
-                    similarity = self._cosine_similarity(query_embedding, chunk_embedding)
-                    chunk_scores.append((chunk, similarity))
-                except Exception as e:
-                    logger.warning(f"Error embedding chunk: {e}")
-                    # Assign low score to failed chunks
-                    chunk_scores.append((chunk, 0.0))
+            for chunk, chunk_embedding in zip(chunks_to_rank, chunk_embeddings):
+                similarity = self._cosine_similarity(query_embedding, chunk_embedding)
+                chunk_scores.append((chunk, similarity))
 
             # Sort by similarity (highest first)
             chunk_scores.sort(key=lambda x: x[1], reverse=True)
 
-            # Return top N chunks
-            top_chunks = [chunk for chunk, score in chunk_scores[:max_chunks]]
+            # Return top N chunks and their scores
+            top_chunk_scores = chunk_scores[:max_chunks]
+            top_chunks = [chunk for chunk, score in top_chunk_scores]
+            top_scores = [score for chunk, score in top_chunk_scores]
 
             logger.info(
-                f"Ranked {len(chunks)} chunks, selected top {len(top_chunks)} "
-                f"(scores: {[score for _, score in chunk_scores[:5]][:3]}...)"
+                f"Ranked {len(chunks_to_rank)} chunks, selected top {len(top_chunks)} "
+                f"(top scores: {[f'{score:.3f}' for score in top_scores[:3]]})"
             )
 
-            return top_chunks
+            return top_chunks, top_scores
 
         except Exception as e:
             logger.error(f"Error ranking chunks: {e}", exc_info=True)
-            # Fallback: return first N chunks
-            return chunks[:max_chunks]
+            # Fallback: return first N chunks with no scores
+            return chunks[:max_chunks], [0.0] * min(max_chunks, len(chunks))
 
     @staticmethod
     def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
