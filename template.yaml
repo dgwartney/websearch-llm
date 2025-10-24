@@ -8,6 +8,12 @@ Parameters:
     Description: The domain to search (e.g., example.com)
     Default: example.com
 
+  BraveApiKey:
+    Type: String
+    Description: Brave Search API Key (optional, leave empty to use alternative)
+    Default: ""
+    NoEcho: true
+
   GoogleApiKey:
     Type: String
     Description: Google Custom Search API Key (optional, leave empty to use alternative)
@@ -44,12 +50,17 @@ Globals:
     Environment:
       Variables:
         TARGET_DOMAIN: !Ref TargetDomain
+        BRAVE_API_KEY: !Ref BraveApiKey
         GOOGLE_API_KEY: !Ref GoogleApiKey
         GOOGLE_SEARCH_ENGINE_ID: !Ref GoogleSearchEngineId
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         MAX_CONCURRENT_REQUESTS: !Ref MaxConcurrentRequests
         POWERTOOLS_SERVICE_NAME: websearch-llm
         LOG_LEVEL: INFO
+    Tags:
+      Owner: david.gwartney@genesys.com
+      Purpose: Demonstration
+      Project: WestJet
 
 Resources:
   WebSearchLLMFunction:
@@ -96,39 +107,10 @@ Resources:
         AllowMethods: "'POST, OPTIONS'"
         AllowHeaders: "'Content-Type,X-Api-Key'"
         AllowOrigin: "'*'"
-
-  WebSearchApiKey:
-    Type: AWS::ApiGateway::ApiKey
-    Properties:
-      Name: !Sub '${AWS::StackName}-api-key'
-      Description: API Key for WebSearch LLM
-      Enabled: true
-      StageKeys:
-        - RestApiId: !Ref WebSearchApi
-          StageName: prod
-    DependsOn:
-      - WebSearchApiStage
-
-  WebSearchApiStage:
-    Type: AWS::ApiGateway::Stage
-    Properties:
-      DeploymentId: !Ref WebSearchApiDeployment
-      RestApiId: !Ref WebSearchApi
-      StageName: prod
-
-  WebSearchApiDeployment:
-    Type: AWS::ApiGateway::Deployment
-    Properties:
-      RestApiId: !Ref WebSearchApi
-    DependsOn:
-      - WebSearchLLMFunction
-
-  UsagePlanKey:
-    Type: AWS::ApiGateway::UsagePlanKey
-    Properties:
-      KeyId: !Ref WebSearchApiKey
-      KeyType: API_KEY
-      UsagePlanId: !Ref WebSearchApi.UsagePlan
+      Tags:
+        Owner: david.gwartney@genesys.com
+        Purpose: Demonstration
+        Project: WestJet
 
 Outputs:
   WebSearchApiEndpoint:
@@ -137,7 +119,7 @@ Outputs:
 
   WebSearchApiKey:
     Description: API Key ID (retrieve value from AWS Console or CLI)
-    Value: !Ref WebSearchApiKey
+    Value: !Ref WebSearchApiApiKey
 
   FunctionArn:
     Description: Lambda Function ARN

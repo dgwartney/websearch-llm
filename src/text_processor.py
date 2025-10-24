@@ -6,7 +6,7 @@ import logging
 from typing import List
 import numpy as np
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_aws import BedrockEmbeddings
+from langchain_community.embeddings import BedrockEmbeddings
 from langchain.schema import Document
 
 logger = logging.getLogger(__name__)
