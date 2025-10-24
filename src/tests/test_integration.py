@@ -94,12 +94,15 @@ class TestIntegration:
                     metadata={'source': 'https://aws.amazon.com/lambda/features/'}
                 )
             ]
-            mock_text_processor.rank_chunks.return_value = [
-                Document(
-                    page_content="AWS Lambda is a serverless compute service.",
-                    metadata={'source': 'https://aws.amazon.com/lambda/features/'}
-                )
-            ]
+            mock_text_processor.rank_chunks.return_value = (
+                [
+                    Document(
+                        page_content="AWS Lambda is a serverless compute service.",
+                        metadata={'source': 'https://aws.amazon.com/lambda/features/'}
+                    )
+                ],
+                [0.87]
+            )
             mock_text_processor.format_chunks_for_context.return_value = (
                 "[Source 1: https://aws.amazon.com/lambda/features/]\n"
                 "AWS Lambda is a serverless compute service."
@@ -127,6 +130,7 @@ class TestIntegration:
             assert 'answer' in body
             assert 'sources' in body
             assert 'metadata' in body
+            assert 'source_details' in body
 
             # Verify answer content
             assert 'serverless' in body['answer'].lower()
@@ -135,6 +139,13 @@ class TestIntegration:
             # Verify sources
             assert len(body['sources']) > 0
             assert 'aws.amazon.com' in body['sources'][0]
+
+            # Verify source_details
+            assert len(body['source_details']) == 1
+            assert body['source_details'][0]['rank'] == 1
+            assert body['source_details'][0]['similarity_score'] == 0.87
+            assert 'url' in body['source_details'][0]
+            assert 'content_preview' in body['source_details'][0]
 
             # Verify metadata
             assert body['metadata']['chunks_processed'] == 1
@@ -205,9 +216,10 @@ class TestIntegration:
             MockTextProcessor.return_value.chunk_documents.return_value = [
                 Document(page_content="Test chunk", metadata={'source': 'https://example.com'})
             ]
-            MockTextProcessor.return_value.rank_chunks.return_value = [
-                Document(page_content="Test chunk", metadata={'source': 'https://example.com'})
-            ]
+            MockTextProcessor.return_value.rank_chunks.return_value = (
+                [Document(page_content="Test chunk", metadata={'source': 'https://example.com'})],
+                [0.80]
+            )
             MockTextProcessor.return_value.format_chunks_for_context.return_value = "Context"
             MockBedrockService.return_value.generate_answer.return_value = "Test answer"
 
@@ -236,9 +248,10 @@ class TestIntegration:
             MockTextProcessor.return_value.chunk_documents.return_value = [
                 Document(page_content="Chunk", metadata={'source': 'url1'})
             ]
-            MockTextProcessor.return_value.rank_chunks.return_value = [
-                Document(page_content="Chunk", metadata={'source': 'url1'})
-            ]
+            MockTextProcessor.return_value.rank_chunks.return_value = (
+                [Document(page_content="Chunk", metadata={'source': 'url1'})],
+                [0.77]
+            )
             MockTextProcessor.return_value.format_chunks_for_context.return_value = "Context"
             MockBedrockService.return_value.generate_answer.return_value = "Answer"
 
@@ -252,6 +265,9 @@ class TestIntegration:
             assert metadata['total_time_ms'] >= 0
             assert metadata['urls_scraped'] >= 1
             assert metadata['chunks_processed'] >= 1
+            # Verify source_details exist
+            assert 'source_details' in body
+            assert len(body['source_details']) >= 1
 
     def test_handler_instance_reuse(self, sample_search_query_event, lambda_context):
         """Test that handler instance is reused across invocations."""
@@ -333,10 +349,13 @@ class TestIntegration:
                 Document(page_content="Chunk 2", metadata={'source': 'url1'}),
                 Document(page_content="Chunk 3", metadata={'source': 'url1'})
             ]
-            MockTextProcessor.return_value.rank_chunks.return_value = [
-                Document(page_content="Chunk 1", metadata={'source': 'url1'}),
-                Document(page_content="Chunk 2", metadata={'source': 'url1'})
-            ]
+            MockTextProcessor.return_value.rank_chunks.return_value = (
+                [
+                    Document(page_content="Chunk 1", metadata={'source': 'url1'}),
+                    Document(page_content="Chunk 2", metadata={'source': 'url1'})
+                ],
+                [0.92, 0.88]
+            )
             MockTextProcessor.return_value.format_chunks_for_context.return_value = "Context"
             MockBedrockService.return_value.generate_answer.return_value = "Answer"
 
@@ -346,6 +365,11 @@ class TestIntegration:
             # Should only have one unique source
             assert len(body['sources']) == 1
             assert body['sources'][0] == 'url1'
+            # But should have multiple source_details (one per chunk)
+            assert 'source_details' in body
+            assert len(body['source_details']) == 2
+            assert body['source_details'][0]['similarity_score'] == 0.92
+            assert body['source_details'][1]['similarity_score'] == 0.88
 
 
 if __name__ == '__main__':

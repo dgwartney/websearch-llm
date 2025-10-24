@@ -64,9 +64,10 @@ class TestWebSearchLLMHandler:
             Document(page_content="Chunk 1", metadata={'source': 'url1'}),
             Document(page_content="Chunk 2", metadata={'source': 'url2'})
         ]
-        handler.text_processor.rank_chunks.return_value = [
-            Document(page_content="Chunk 1", metadata={'source': 'url1'})
-        ]
+        handler.text_processor.rank_chunks.return_value = (
+            [Document(page_content="Chunk 1", metadata={'source': 'url1'})],
+            [0.85]
+        )
         handler.text_processor.format_chunks_for_context.return_value = "Formatted context"
         handler.bedrock_service.generate_answer.return_value = "Generated answer"
 
@@ -79,6 +80,13 @@ class TestWebSearchLLMHandler:
         assert 'metadata' in result
         assert result['metadata']['chunks_processed'] == 1
         assert result['metadata']['urls_scraped'] == 2
+        # Check for source_details
+        assert 'source_details' in result
+        assert len(result['source_details']) == 1
+        assert result['source_details'][0]['rank'] == 1
+        assert result['source_details'][0]['similarity_score'] == 0.85
+        assert 'url' in result['source_details'][0]
+        assert 'content_preview' in result['source_details'][0]
 
         # Verify service calls
         handler.search_service.search.assert_called_once_with(
@@ -121,9 +129,10 @@ class TestWebSearchLLMHandler:
             Document(page_content=f"Chunk {i}", metadata={'source': f'url{i}'})
             for i in range(20)
         ]
-        handler.text_processor.rank_chunks.return_value = [
-            Document(page_content="Chunk", metadata={'source': 'url1'})
-        ]
+        handler.text_processor.rank_chunks.return_value = (
+            [Document(page_content="Chunk", metadata={'source': 'url1'})],
+            [0.75]
+        )
         handler.text_processor.format_chunks_for_context.return_value = "Context"
         handler.bedrock_service.generate_answer.return_value = "Answer"
 
@@ -140,6 +149,9 @@ class TestWebSearchLLMHandler:
             query="query",
             max_chunks=15
         )
+        # Verify source_details exist
+        assert 'source_details' in result
+        assert len(result['source_details']) == 1
 
     def test_process_query_timing_metadata(self, handler, sample_documents):
         """Test that timing metadata is included in response."""
@@ -148,9 +160,10 @@ class TestWebSearchLLMHandler:
         handler.text_processor.chunk_documents.return_value = [
             Document(page_content="Chunk", metadata={'source': 'url1'})
         ]
-        handler.text_processor.rank_chunks.return_value = [
-            Document(page_content="Chunk", metadata={'source': 'url1'})
-        ]
+        handler.text_processor.rank_chunks.return_value = (
+            [Document(page_content="Chunk", metadata={'source': 'url1'})],
+            [0.90]
+        )
         handler.text_processor.format_chunks_for_context.return_value = "Context"
         handler.bedrock_service.generate_answer.return_value = "Answer"
 
@@ -159,6 +172,9 @@ class TestWebSearchLLMHandler:
         assert 'total_time_ms' in result['metadata']
         assert isinstance(result['metadata']['total_time_ms'], int)
         assert result['metadata']['total_time_ms'] >= 0
+        # Verify source_details exist
+        assert 'source_details' in result
+        assert len(result['source_details']) == 1
 
     def test_process_query_unique_sources(self, handler):
         """Test that sources are deduplicated."""
@@ -171,11 +187,14 @@ class TestWebSearchLLMHandler:
             Document(page_content="Chunk 2", metadata={'source': 'url1'}),
             Document(page_content="Chunk 3", metadata={'source': 'url2'})
         ]
-        handler.text_processor.rank_chunks.return_value = [
-            Document(page_content="Chunk 1", metadata={'source': 'url1'}),
-            Document(page_content="Chunk 2", metadata={'source': 'url1'}),
-            Document(page_content="Chunk 3", metadata={'source': 'url2'})
-        ]
+        handler.text_processor.rank_chunks.return_value = (
+            [
+                Document(page_content="Chunk 1", metadata={'source': 'url1'}),
+                Document(page_content="Chunk 2", metadata={'source': 'url1'}),
+                Document(page_content="Chunk 3", metadata={'source': 'url2'})
+            ],
+            [0.95, 0.92, 0.88]
+        )
         handler.text_processor.format_chunks_for_context.return_value = "Context"
         handler.bedrock_service.generate_answer.return_value = "Answer"
 
@@ -185,6 +204,10 @@ class TestWebSearchLLMHandler:
         assert len(result['sources']) == 2
         assert 'url1' in result['sources']
         assert 'url2' in result['sources']
+        # Verify source_details exist and include all chunks
+        assert 'source_details' in result
+        assert len(result['source_details']) == 3
+        assert result['source_details'][0]['similarity_score'] == 0.95
 
 
 class TestLambdaHandler:

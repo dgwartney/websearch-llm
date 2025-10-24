@@ -123,15 +123,17 @@ class TestTextProcessor:
             for i in range(5)
         ]
 
-        result = text_processor.rank_chunks(chunks, "test query", max_chunks=10)
+        result_chunks, result_scores = text_processor.rank_chunks(chunks, "test query", max_chunks=10)
 
         # Should return all chunks when under limit
-        assert len(result) == 5
+        assert len(result_chunks) == 5
+        assert len(result_scores) == 5
 
     def test_rank_chunks_empty_list(self, text_processor):
         """Test ranking empty chunk list."""
-        result = text_processor.rank_chunks([], "test query", max_chunks=10)
-        assert result == []
+        result_chunks, result_scores = text_processor.rank_chunks([], "test query", max_chunks=10)
+        assert result_chunks == []
+        assert result_scores == []
 
     def test_rank_chunks_no_embeddings(self, text_processor_no_embeddings):
         """Test ranking when embeddings are not available."""
@@ -140,11 +142,14 @@ class TestTextProcessor:
             for i in range(15)
         ]
 
-        result = text_processor_no_embeddings.rank_chunks(chunks, "test query", max_chunks=10)
+        result_chunks, result_scores = text_processor_no_embeddings.rank_chunks(chunks, "test query", max_chunks=10)
 
         # Should return first N chunks when embeddings unavailable
-        assert len(result) == 10
-        assert result[0].page_content == "Chunk 0"
+        assert len(result_chunks) == 10
+        assert result_chunks[0].page_content == "Chunk 0"
+        # Should return zero scores when no embeddings
+        assert len(result_scores) == 10
+        assert all(score == 0.0 for score in result_scores)
 
     def test_rank_chunks_with_embeddings_success(self, text_processor):
         """Test ranking with successful embeddings."""
@@ -153,41 +158,62 @@ class TestTextProcessor:
             for i in range(15)
         ]
 
-        # Mock embeddings
+        # Mock embeddings - use batch embedding (embed_documents)
         query_embedding = [0.1, 0.2, 0.3]
         chunk_embeddings = [
             [0.1 + i*0.01, 0.2 + i*0.01, 0.3 + i*0.01]
             for i in range(15)
         ]
 
-        text_processor.embeddings.embed_query.side_effect = [query_embedding] + chunk_embeddings
+        text_processor.embeddings.embed_query.return_value = query_embedding
+        text_processor.embeddings.embed_documents.return_value = chunk_embeddings
 
-        result = text_processor.rank_chunks(chunks, "test query", max_chunks=10)
+        result_chunks, result_scores = text_processor.rank_chunks(chunks, "test query", max_chunks=10)
 
         # Should return top 10 chunks
-        assert len(result) == 10
-        # Embeddings should have been called
-        assert text_processor.embeddings.embed_query.call_count == 16  # 1 query + 15 chunks
+        assert len(result_chunks) == 10
+        assert len(result_scores) == 10
+        # Query embedding should have been called once
+        assert text_processor.embeddings.embed_query.call_count == 1
+        # Batch embedding should have been called
+        assert text_processor.embeddings.embed_documents.call_count == 1
 
     def test_rank_chunks_embedding_exception_handling(self, text_processor):
-        """Test handling of embedding exceptions for individual chunks."""
+        """Test handling of embedding exceptions with batch fallback."""
         chunks = [
             Document(page_content=f"Chunk {i}", metadata={'source': f'url{i}'})
             for i in range(5)
         ]
 
-        # Mock query embedding success, but some chunk embeddings fail
+        # Mock query embedding success
+        query_embedding = [0.1, 0.2, 0.3]
+
+        # Mock batch embedding failure, should fallback to individual embeddings
+        text_processor.embeddings.embed_documents.side_effect = Exception("Batch embedding failed")
+
+        # Mock individual embeddings with some failures
+        call_count = [0]
         def embed_side_effect(text):
-            if "Chunk 2" in text:
-                raise Exception("Embedding failed")
-            return [0.1, 0.2, 0.3]
+            if call_count[0] == 0:
+                # First call is the query
+                call_count[0] += 1
+                return query_embedding
+            else:
+                # Subsequent calls are individual chunks
+                chunk_idx = call_count[0] - 1
+                call_count[0] += 1
+                if chunk_idx == 2:
+                    # Chunk 2 fails
+                    raise Exception("Individual embedding failed")
+                return [0.1 + chunk_idx*0.1, 0.2 + chunk_idx*0.1, 0.3 + chunk_idx*0.1]
 
         text_processor.embeddings.embed_query.side_effect = embed_side_effect
 
-        result = text_processor.rank_chunks(chunks, "test query", max_chunks=3)
+        result_chunks, result_scores = text_processor.rank_chunks(chunks, "test query", max_chunks=3)
 
-        # Should still return results, failed chunks get score 0
-        assert len(result) == 3
+        # Should still return 3 results even with some embedding failures
+        assert len(result_chunks) == 3
+        assert len(result_scores) == 3
 
     def test_rank_chunks_all_embeddings_fail(self, text_processor):
         """Test ranking when all embeddings fail."""
@@ -198,10 +224,13 @@ class TestTextProcessor:
 
         text_processor.embeddings.embed_query.side_effect = Exception("All embeddings failed")
 
-        result = text_processor.rank_chunks(chunks, "test query", max_chunks=10)
+        result_chunks, result_scores = text_processor.rank_chunks(chunks, "test query", max_chunks=10)
 
         # Should fall back to returning first N chunks
-        assert len(result) == 10
+        assert len(result_chunks) == 10
+        # Should return zero scores when embeddings fail
+        assert len(result_scores) == 10
+        assert all(score == 0.0 for score in result_scores)
 
     def test_cosine_similarity_identical_vectors(self):
         """Test cosine similarity with identical vectors."""
@@ -345,11 +374,15 @@ class TestTextProcessor:
             for i in range(10)
         ]
 
-        text_processor.embeddings.embed_query.side_effect = [query_embedding] + chunk_embeddings
+        text_processor.embeddings.embed_query.return_value = query_embedding
+        text_processor.embeddings.embed_documents.return_value = chunk_embeddings
 
-        result = text_processor.rank_chunks(chunks, "test query", max_chunks=5)
+        result_chunks, result_scores = text_processor.rank_chunks(chunks, "test query", max_chunks=5)
 
         # Should return first 5 chunks (highest similarity)
-        assert len(result) == 5
+        assert len(result_chunks) == 5
+        assert len(result_scores) == 5
         # First result should be Chunk 0 (highest similarity)
-        assert result[0].page_content == "Chunk 0"
+        assert result_chunks[0].page_content == "Chunk 0"
+        # Scores should be in descending order
+        assert result_scores[0] >= result_scores[1] >= result_scores[2]
