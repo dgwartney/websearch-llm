@@ -147,6 +147,12 @@ Answer:"""
             new_template: New prompt template string
                          Must include {query} and {context} variables
         """
+        # Validate that both required variables are present
+        if '{query}' not in new_template:
+            raise ValueError("Prompt template must include {query} variable")
+        if '{context}' not in new_template:
+            raise ValueError("Prompt template must include {context} variable")
+
         try:
             self.prompt_template = PromptTemplate(
                 input_variables=["query", "context"],
