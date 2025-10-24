@@ -42,6 +42,20 @@ Parameters:
     MinValue: 1
     MaxValue: 10
 
+  ChunkSize:
+    Type: Number
+    Description: Text chunk size in characters for document splitting
+    Default: 1000
+    MinValue: 100
+    MaxValue: 5000
+
+  ChunkOverlap:
+    Type: Number
+    Description: Overlap between text chunks in characters
+    Default: 200
+    MinValue: 0
+    MaxValue: 1000
+
 Globals:
   Function:
     Timeout: 30
@@ -55,6 +69,8 @@ Globals:
         GOOGLE_SEARCH_ENGINE_ID: !Ref GoogleSearchEngineId
         BEDROCK_MODEL_ID: !Ref BedrockModelId
         MAX_CONCURRENT_REQUESTS: !Ref MaxConcurrentRequests
+        CHUNK_SIZE: !Ref ChunkSize
+        CHUNK_OVERLAP: !Ref ChunkOverlap
         POWERTOOLS_SERVICE_NAME: websearch-llm
         LOG_LEVEL: INFO
     Tags:

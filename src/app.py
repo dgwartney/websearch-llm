@@ -41,8 +41,8 @@ class WebSearchLLMHandler:
         )
 
         self.text_processor = TextProcessor(
-            chunk_size=1000,
-            chunk_overlap=200,
+            chunk_size=int(os.getenv('CHUNK_SIZE', 1000)),
+            chunk_overlap=int(os.getenv('CHUNK_OVERLAP', 200)),
             embedding_model_id="amazon.titan-embed-text-v1",
             aws_region=self.aws_region
         )
