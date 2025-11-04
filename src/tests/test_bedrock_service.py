@@ -292,3 +292,55 @@ Answer:"""
 
         assert "\n\n" in answer
         assert answer == "Answer with\n\nmultiple\n\nparagraphs."
+
+    def test_generate_answer_with_custom_system_prompt(self, bedrock_service):
+        """Test answer generation with custom system prompt."""
+        mock_response = Mock()
+        mock_response.content = "Custom answer"
+        bedrock_service.llm.invoke.return_value = mock_response
+
+        custom_prompt = "You are a helpful assistant.\n\nContext: {context}\n\nQuestion: {query}\n\nAnswer:"
+        query = "What is the pricing?"
+        context = "Pricing information here."
+
+        answer = bedrock_service.generate_answer(query, context, system_prompt=custom_prompt)
+
+        assert answer == "Custom answer"
+        bedrock_service.llm.invoke.assert_called_once()
+
+        # Verify the custom prompt was used
+        call_args = bedrock_service.llm.invoke.call_args[0][0]
+        assert "You are a helpful assistant" in call_args
+        assert query in call_args
+        assert context in call_args
+
+    def test_generate_answer_custom_prompt_missing_query(self, bedrock_service):
+        """Test custom system prompt validation - missing query placeholder."""
+        invalid_prompt = "Context: {context}\n\nAnswer:"
+
+        with pytest.raises(ValueError) as exc_info:
+            bedrock_service.generate_answer("query", "context", system_prompt=invalid_prompt)
+
+        assert "must include {query} placeholder" in str(exc_info.value)
+
+    def test_generate_answer_custom_prompt_missing_context(self, bedrock_service):
+        """Test custom system prompt validation - missing context placeholder."""
+        invalid_prompt = "Question: {query}\n\nAnswer:"
+
+        with pytest.raises(ValueError) as exc_info:
+            bedrock_service.generate_answer("query", "context", system_prompt=invalid_prompt)
+
+        assert "must include {context} placeholder" in str(exc_info.value)
+
+    def test_generate_answer_uses_default_when_no_custom_prompt(self, bedrock_service):
+        """Test that default prompt is used when no custom prompt provided."""
+        mock_response = Mock()
+        mock_response.content = "Default answer"
+        bedrock_service.llm.invoke.return_value = mock_response
+
+        answer = bedrock_service.generate_answer("query", "context")
+
+        assert answer == "Default answer"
+        # Verify default prompt was used (contains WestJet branding)
+        call_args = bedrock_service.llm.invoke.call_args[0][0]
+        assert "WestJet" in call_args

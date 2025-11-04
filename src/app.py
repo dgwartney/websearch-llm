@@ -63,7 +63,8 @@ class WebSearchLLMHandler:
         self,
         query: str,
         max_results: int = 5,
-        max_chunks: int = 10
+        max_chunks: int = 10,
+        system_prompt: str = None
     ) -> Dict[str, Any]:
         """
         Process a search query and generate an answer.
@@ -72,6 +73,7 @@ class WebSearchLLMHandler:
             query: User's search query
             max_results: Maximum number of URLs to search
             max_chunks: Maximum number of text chunks to use for context
+            system_prompt: Optional custom system prompt template with {query} and {context} placeholders
 
         Returns:
             Dict containing answer, sources, and metadata
@@ -130,7 +132,7 @@ class WebSearchLLMHandler:
 
         # Step 6: Generate answer using LLM
         logger.info("Generating answer with Bedrock")
-        answer = self.bedrock_service.generate_answer(query, context)
+        answer = self.bedrock_service.generate_answer(query, context, system_prompt)
 
         # Extract unique source URLs
         source_urls = list(set([
@@ -177,7 +179,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     {
         "query": "What is the pricing for product X?",
         "max_results": 5,
-        "max_chunks": 10
+        "max_chunks": 10,
+        "system_prompt": "You are a helpful assistant. Context: {context}\n\nQuestion: {query}\n\nAnswer:"
     }
 
     Returns:
@@ -214,6 +217,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         max_results = body.get('max_results', 5)
         max_chunks = body.get('max_chunks', 10)
+        system_prompt = body.get('system_prompt')
 
         # Validate parameters
         if not isinstance(max_results, int) or max_results < 1 or max_results > 20:
@@ -234,8 +238,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 })
             }
 
+        # Validate system_prompt if provided
+        if system_prompt:
+            if not isinstance(system_prompt, str):
+                return {
+                    'statusCode': 400,
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({
+                        'error': 'system_prompt must be a string'
+                    })
+                }
+            if '{query}' not in system_prompt or '{context}' not in system_prompt:
+                return {
+                    'statusCode': 400,
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({
+                        'error': 'system_prompt must include {query} and {context} placeholders'
+                    })
+                }
+
         # Process query
-        result = handler.process_query(query, max_results, max_chunks)
+        result = handler.process_query(query, max_results, max_chunks, system_prompt)
 
         return {
             'statusCode': 200,

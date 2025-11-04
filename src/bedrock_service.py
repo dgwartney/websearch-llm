@@ -90,20 +90,41 @@ BAD: "Prohibited items include unapproved devices... (Source 1)."
 Your answer (start directly, no preamble, no source citations):"""
         )
 
-    def generate_answer(self, query: str, context: str) -> str:
+    def generate_answer(self, query: str, context: str, system_prompt: Optional[str] = None) -> str:
         """
         Generate an answer to the query based on the provided context.
 
         Args:
             query: User's question
             context: Context from scraped and chunked documents
+            system_prompt: Optional custom system prompt template. If provided,
+                          must include {query} and {context} placeholders.
+                          If not provided, uses the default template.
 
         Returns:
             Generated answer
         """
         try:
+            # Use custom prompt template if provided, otherwise use default
+            if system_prompt:
+                # Validate that both required variables are present
+                if '{query}' not in system_prompt:
+                    raise ValueError("System prompt must include {query} placeholder")
+                if '{context}' not in system_prompt:
+                    raise ValueError("System prompt must include {context} placeholder")
+
+                # Create temporary prompt template
+                prompt_template = PromptTemplate(
+                    input_variables=["query", "context"],
+                    template=system_prompt
+                )
+                logger.info("Using custom system prompt from request")
+            else:
+                prompt_template = self.prompt_template
+                logger.info("Using default system prompt")
+
             # Format prompt
-            formatted_prompt = self.prompt_template.format(
+            formatted_prompt = prompt_template.format(
                 query=query,
                 context=context
             )

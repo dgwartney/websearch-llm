@@ -371,8 +371,8 @@ class TestLambdaHandler:
 
             response = lambda_handler(event, lambda_context)
 
-            # Verify default params were used
-            mock_handler.process_query.assert_called_once_with('test query', 5, 10)
+            # Verify default params were used (system_prompt is None by default)
+            mock_handler.process_query.assert_called_once_with('test query', 5, 10, None)
 
     def test_lambda_handler_reuses_handler_instance(self, lambda_event, lambda_context):
         """Test that Lambda handler reuses the global handler instance."""
@@ -439,3 +439,103 @@ class TestLambdaHandler:
             # Should be able to parse response body
             body = json.loads(response['body'])
             assert isinstance(body, dict)
+
+    def test_lambda_handler_with_system_prompt(self, lambda_context):
+        """Test Lambda handler with custom system prompt."""
+        custom_prompt = "You are helpful.\n\nContext: {context}\n\nQuestion: {query}\n\nAnswer:"
+        event = {
+            'body': json.dumps({
+                'query': 'test query',
+                'system_prompt': custom_prompt
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler') as mock_handler_class:
+            mock_handler = Mock()
+            mock_handler.process_query.return_value = {
+                'answer': 'Custom answer',
+                'sources': [],
+                'metadata': {}
+            }
+            mock_handler_class.return_value = mock_handler
+
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 200
+            # Verify system_prompt was passed to process_query
+            mock_handler.process_query.assert_called_once_with(
+                'test query', 5, 10, custom_prompt
+            )
+
+    def test_lambda_handler_system_prompt_missing_query_placeholder(self, lambda_context):
+        """Test Lambda handler with system prompt missing query placeholder."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'system_prompt': 'Context: {context}\n\nAnswer:'
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'must include {query} and {context} placeholders' in body['error']
+
+    def test_lambda_handler_system_prompt_missing_context_placeholder(self, lambda_context):
+        """Test Lambda handler with system prompt missing context placeholder."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'system_prompt': 'Question: {query}\n\nAnswer:'
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'must include {query} and {context} placeholders' in body['error']
+
+    def test_lambda_handler_system_prompt_invalid_type(self, lambda_context):
+        """Test Lambda handler with system prompt of wrong type."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'system_prompt': 123  # Should be string
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'system_prompt must be a string' in body['error']
+
+    def test_lambda_handler_without_system_prompt_uses_default(self, lambda_context):
+        """Test Lambda handler without system prompt uses default."""
+        event = {
+            'body': json.dumps({
+                'query': 'test query'
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler') as mock_handler_class:
+            mock_handler = Mock()
+            mock_handler.process_query.return_value = {
+                'answer': 'Default answer',
+                'sources': [],
+                'metadata': {}
+            }
+            mock_handler_class.return_value = mock_handler
+
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 200
+            # Verify system_prompt parameter was None (uses default)
+            mock_handler.process_query.assert_called_once_with(
+                'test query', 5, 10, None
+            )
