@@ -13,6 +13,7 @@ A multi-tier caching strategy to reduce latency, API costs, and improve user exp
 **What to Cache**: Complete answer responses for identical queries
 
 **Cache Key Strategy**:
+
 ```python
 cache_key = hash(query + target_domain + max_results + max_chunks)
 # Example: "prohibited_items_westjet_3_5_v1"
@@ -21,6 +22,7 @@ cache_key = hash(query + target_domain + max_results + max_chunks)
 **Storage Options**:
 
 **Option A: DynamoDB** (Recommended for serverless)
+
 - **Table Schema**:
   ```
   PK: query_hash (String)
@@ -36,11 +38,13 @@ cache_key = hash(query + target_domain + max_results + max_chunks)
 - **TTL**: 1-24 hours depending on content freshness requirements
 
 **Option B: ElastiCache (Redis/Memcached)**
+
 - **Benefits**: Sub-millisecond latency, advanced features (pub/sub, sorted sets)
 - **Drawbacks**: Always-on cost (~$15-50/month), VPC complexity, cold starts
 - **Use Case**: High-traffic scenarios (>10,000 requests/day)
 
 **Cache Invalidation**:
+
 - Time-based TTL (e.g., 6 hours for general content, 1 hour for dynamic content)
 - Manual invalidation API endpoint for content updates
 - LRU eviction for size-limited caches
@@ -57,11 +61,13 @@ cache_key = f"search_{hash(query + target_domain + max_results)}"
 ```
 
 **Rationale**:
+
 - Search results change slowly for most queries
 - Avoid repeated API calls to paid search services
 - Reduce dependency on external APIs
 
 **DynamoDB Schema**:
+
 ```
 PK: search_hash
 urls: List of URLs (StringSet or JSON)
@@ -71,6 +77,7 @@ ttl: 12-24 hours
 ```
 
 **Benefits**:
+
 - Saves $0.005-0.01 per cached search (Brave/SerpAPI)
 - Reduces external API latency (200-500ms)
 - Provides fallback if search API is down
@@ -87,6 +94,7 @@ cache_key = f"content_{hash(url)}"
 ```
 
 **Rationale**:
+
 - Website content changes slowly (especially documentation)
 - Scraping is the slowest part (1-3 seconds per URL)
 - Reduces load on target websites

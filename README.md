@@ -98,6 +98,7 @@ sam deploy --guided
 ```
 
 Follow the prompts:
+
 - **Stack Name**: `websearch-llm`
 - **AWS Region**: Your preferred region (e.g., `us-east-1`)
 - **Parameter TargetDomain**: Your target domain
@@ -181,6 +182,7 @@ x-api-key: <your-api-key>
 ```
 
 **Response Fields:**
+
 - `answer`: Clean, conversational answer text (no source citations)
 - `sources`: Array of unique URLs used to generate the answer
 - `source_details`: Detailed information about each chunk used:
@@ -436,6 +438,7 @@ MIT
 ## Support
 
 For issues or questions:
+
 1. Check CloudWatch Logs
 2. Review this README
 3. Open GitHub issue
