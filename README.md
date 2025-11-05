@@ -280,6 +280,11 @@ BedrockModelId:
   # Alternative: anthropic.claude-3-sonnet-20240229-v1:0  # More capable
   # Alternative: anthropic.claude-3-5-sonnet-20240620-v1:0  # Most capable
 ```
+### Additional Search Services
+
+This articles describes other services that are available:
+
+https://www.kdnuggets.com/7-free-web-search-apis-for-ai-agents
 
 ## Local Testing
 
