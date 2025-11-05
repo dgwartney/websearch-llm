@@ -6,7 +6,7 @@ Parameters:
   TargetDomain:
     Type: String
     Description: The domain to search (e.g., example.com)
-    Default: example.com
+    Default: genesys.com
 
   BraveApiKey:
     Type: String
@@ -76,7 +76,7 @@ Globals:
     Tags:
       Owner: david.gwartney@genesys.com
       Purpose: Demonstration
-      Project: WestJet
+      Project: Innovation
 
 Resources:
   WebSearchLLMFunction:

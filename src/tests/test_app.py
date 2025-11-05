@@ -371,8 +371,18 @@ class TestLambdaHandler:
 
             response = lambda_handler(event, lambda_context)
 
-            # Verify default params were used (system_prompt is None by default)
-            mock_handler.process_query.assert_called_once_with('test query', 5, 10, None)
+            # Verify default params were used
+            mock_handler.process_query.assert_called_once_with(
+                query='test query',
+                max_results=5,
+                max_chunks=10,
+                system_prompt=None,
+                target_domain=None,
+                bedrock_model_id=None,
+                chunk_size=None,
+                chunk_overlap=None,
+                log_level=None
+            )
 
     def test_lambda_handler_reuses_handler_instance(self, lambda_event, lambda_context):
         """Test that Lambda handler reuses the global handler instance."""
@@ -464,7 +474,15 @@ class TestLambdaHandler:
             assert response['statusCode'] == 200
             # Verify system_prompt was passed to process_query
             mock_handler.process_query.assert_called_once_with(
-                'test query', 5, 10, custom_prompt
+                query='test query',
+                max_results=5,
+                max_chunks=10,
+                system_prompt=custom_prompt,
+                target_domain=None,
+                bedrock_model_id=None,
+                chunk_size=None,
+                chunk_overlap=None,
+                log_level=None
             )
 
     def test_lambda_handler_system_prompt_missing_query_placeholder(self, lambda_context):
@@ -537,5 +555,149 @@ class TestLambdaHandler:
             assert response['statusCode'] == 200
             # Verify system_prompt parameter was None (uses default)
             mock_handler.process_query.assert_called_once_with(
-                'test query', 5, 10, None
+                query='test query',
+                max_results=5,
+                max_chunks=10,
+                system_prompt=None,
+                target_domain=None,
+                bedrock_model_id=None,
+                chunk_size=None,
+                chunk_overlap=None,
+                log_level=None
             )
+
+    def test_lambda_handler_with_all_custom_params(self, lambda_context):
+        """Test Lambda handler with all custom parameters."""
+        event = {
+            'body': json.dumps({
+                'query': 'test query',
+                'max_results': 3,
+                'max_chunks': 8,
+                'target_domain': 'custom.com',
+                'bedrock_model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
+                'chunk_size': 500,
+                'chunk_overlap': 100,
+                'log_level': 'DEBUG'
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler') as mock_handler_class:
+            mock_handler = Mock()
+            mock_handler.process_query.return_value = {
+                'answer': 'Answer',
+                'sources': [],
+                'metadata': {}
+            }
+            mock_handler_class.return_value = mock_handler
+
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 200
+            mock_handler.process_query.assert_called_once_with(
+                query='test query',
+                max_results=3,
+                max_chunks=8,
+                system_prompt=None,
+                target_domain='custom.com',
+                bedrock_model_id='anthropic.claude-3-sonnet-20240229-v1:0',
+                chunk_size=500,
+                chunk_overlap=100,
+                log_level='DEBUG'
+            )
+
+    def test_lambda_handler_invalid_target_domain(self, lambda_context):
+        """Test Lambda handler with invalid target_domain."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'target_domain': ''  # Empty string
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'target_domain must be a non-empty string' in body['error']
+
+    def test_lambda_handler_invalid_bedrock_model_id(self, lambda_context):
+        """Test Lambda handler with invalid bedrock_model_id."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'bedrock_model_id': 123  # Wrong type
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'bedrock_model_id must be a non-empty string' in body['error']
+
+    def test_lambda_handler_invalid_chunk_size(self, lambda_context):
+        """Test Lambda handler with invalid chunk_size."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'chunk_size': 50000  # Too large
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'chunk_size must be an integer between 100 and 10000' in body['error']
+
+    def test_lambda_handler_invalid_chunk_overlap(self, lambda_context):
+        """Test Lambda handler with invalid chunk_overlap."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'chunk_overlap': -10  # Negative
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'chunk_overlap must be an integer between 0 and 1000' in body['error']
+
+    def test_lambda_handler_chunk_overlap_exceeds_chunk_size(self, lambda_context):
+        """Test Lambda handler with chunk_overlap >= chunk_size."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'chunk_size': 500,
+                'chunk_overlap': 500  # Equal to chunk_size
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'chunk_overlap must be less than chunk_size' in body['error']
+
+    def test_lambda_handler_invalid_log_level(self, lambda_context):
+        """Test Lambda handler with invalid log_level."""
+        event = {
+            'body': json.dumps({
+                'query': 'test',
+                'log_level': 'INVALID'
+            })
+        }
+
+        with patch('app.WebSearchLLMHandler'):
+            response = lambda_handler(event, lambda_context)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'log_level must be one of' in body['error']
